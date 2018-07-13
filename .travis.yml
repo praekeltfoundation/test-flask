@@ -1,0 +1,56 @@
+sudo: false  # Force container-based builds.
+language: python
+
+cache:
+  - pip
+before_install:
+  - pip install --upgrade pip
+install:
+   - pip install -r requirements.txt
+script:
+  - flake8 app.py
+
+jobs:
+  include:
+    - stage: test
+      python: "3.6"
+      # Clear unused build steps
+      services: []
+      deploy: []
+      after_success: []
+    - stage: docker
+      python: "3.6"
+      sudo: required
+      dist: trusty
+      services: [docker]
+      env:
+        - IMAGE_NAME=praekeltfoundation/test-flask
+        - REGISTRY_USER=praekeltorgdeploy
+        - secure: "Dus4+fiH6+q3Qh63teDRvjmR3HiwDZRbfYU/l03yXGExjZM8Q3OeQ2g3sfBc5a6ZGU+R8Uo9Fa43bylwVoUY85Kmg6XSET6MSapAglOT1W/jfteDVkKs9jI5RS2v50axSiXu+f+XBcvanR29aD9d5jDFNIb/t3JTkjoe65ef8cnhYVPXMF0K9R6dp92iGGX1duX98/9ztELAMB7Lt2Ngv1ECoVj1II3EBldKMKCt5elWd31ExPXglV5Wn0QdE9+f2vpinAN5cLGza7NUiWN3DaM4dTNBRMUFw+8UP5j6B/UzWbQkUTatxQQctMRH/Uh+cWxpeEYf4wSyuS96B9yho4m4ol/wxtV0V88ubkoS4qO60zoEIURKDJEyIVvPNWMfH/3ykeqqRSaFvIwWZ4clJlBrMFLZhZFHMlHAKspXyigTwhW3Wi6p/pRJ55h1Q9ASSjrpnsP/zx8VPUMGC1Cslo1OgtOlHBUKYliB3hiGN+Vu3GfXgnwo6mjQa7afOVVPmpT8ku/Mo071jAtmPIUQ2vm72BLRwTTEzhifXlh85cNnad9QdVtfLV25ar1JbDPwSsuLKl77tDgY6wWzkuN/SgvjsV+J1VMDLouoW2RWsNzmHKRlpmldblfgvkzX2WqPMeWwyYlOcExPwUCf3PIt5+TGz3VSan3L64sGKoARueA=" # yamllint disable-line
+
+      # Update Docker: we want some new docker build features
+      install:
+        - sudo apt-get update
+        - sudo apt-get install -y -o Dpkg::Options::="--force-confold" docker-ce
+
+      before_script:
+        - docker pull "$IMAGE_NAME" || true
+      script:
+        - docker build --pull --tag "$IMAGE_NAME" .
+
+      before_deploy:
+        - pip install docker-ci-deploy==0.3.0
+        - echo -n $REGISTRY_PASS | docker login -u "$REGISTRY_USER" --password-stdin # yamllint disable-line
+      deploy:
+        - provider: script
+          script: dcd --version "$(git rev-parse --short HEAD)" --version-latest "$IMAGE_NAME" # yamllint disable-line
+          on:
+            branch: master
+        - provider: script
+          script: dcd --tag "$TRAVIS_TAG" -- "$IMAGE_NAME"
+          on:
+            tags: true
+
+      # Built steps inherited from the default stage that we don't want
+      before_install: ignore
+after_success: []
